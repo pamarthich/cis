@@ -1,0 +1,315 @@
+---
+# tasks for all level-1 CIS vulnerabilities
+- name: 1.8 - update yum security packages
+  yum:
+    name: "*"
+    state: latest
+    #security: yes
+    disablerepo: "epel"
+  ignore_errors: True
+  tags:
+     - yum-update
+
+- name: 1.2.2 - Ensure GPG keys are configured
+  shell: rpm -q gpg-pubkey --qf '%{name}-%{version}-%{release} --> %{summary}\n'
+  register: gpg_pubkey_check
+  changed_when: false
+  args:
+    warn: false
+  tags:
+    - "1.2.2"
+
+- name: 1.2.2 - Check GPG keys are configured
+  debug:
+    msg: RPM command output is {{ gpg_pubkey_check.stdout }}
+  tags:
+    - "1.2.2"
+
+- name: 2.3.5 - Remove Open LDAP
+  yum:
+    name: openldap-clients
+    state: absent
+  ignore_errors: True
+  tags:
+    - "2.3.5"
+    - ldap
+
+- name: 3.3.3 - Check if CIS modprobe configuration file exists
+  stat:
+    path: "/etc/modprobe.d/CIS.conf"
+  register: modprobe_3_3_3
+  tags:
+    - "3.3.3"
+
+- name: 3.3.3 - Ensure IPv6 is disabled
+  copy:
+    dest: "/etc/modprobe.d/CIS.conf"
+    content: "options ipv6 disable=1\n"
+  when: modprobe_3_3_3.stat.exists is not defined or not modprobe_3_3_3.stat.exists
+  tags:
+    - "3.3.3"
+
+- name: 3.3.3 - Ensure IPv6 is disabled
+  lineinfile:
+    dest: "/etc/modprobe.d/CIS.conf"
+    regexp: "^options ipv6 disable="
+    line: "options ipv6 disable=1"
+  when: modprobe_3_3_3.stat.exists is defined and modprobe_3_3_3.stat.exists
+  tags:
+    - "3.3.3"
+
+- name: Ensure Loopback traffic is configured
+  command: "{{ item }}"
+  with_items:
+    - iptables -A INPUT -i lo -j ACCEPT
+    - iptables -A OUTPUT -o lo -j ACCEPT
+    - iptables -A INPUT -s 127.0.0.0/8 -j DROP
+  tags:
+    - "3.6.3"
+
+- name: 4.2.4 - Find logfiles in /var/log
+  shell: "find /var/log -type f"
+  register: find_logfiles_4_2_4
+  changed_when: false
+  tags:
+    - "4.2.4"
+
+- name: 4.2.4 - Ensure permissions on all logfiles are configured appropriately
+  file:
+    path: "{{ item }}"
+    mode: 0730
+  with_items:
+    - "{{ find_logfiles_4_2_4.stdout_lines }}"
+  tags:
+    - "4.2.4"
+
+- name: 4.2.1.3 - Ensure rsyslog default file permissions configured
+  lineinfile:
+    regexp: "^\\$FileCreateMode\\s+"
+    line: "$FileCreateMode 0640"
+    insertbefore: BOF
+    dest: "/etc/rsyslog.conf"
+  when: cis_enable_rsyslog
+  notify:
+    - Restart rsyslog
+  tags:
+    - "4.2.1.3"
+
+- name: Check if /etc/ssh/sshd_config exists
+  stat:
+     path: /etc/ssh/sshd_config
+  register: sshd_config
+  tags:
+    - "5.2.4"
+
+- name: 5.2.4 - Ensure SSH X11 forwarding is disabled
+  lineinfile:
+    regexp: "^X11Forwarding\\s+"
+    line: "#X11Forwarding no"
+    dest: "/etc/ssh/sshd_config"
+  when: sshd_config.stat.exists
+  tags:
+    - "5.2.4"
+
+
+- name: 5.2.15 - Configure SSH AllowUsers
+  lineinfile:
+    regexp: "^#?AllowUsers\\s+"
+    line: "AllowUsers {{ cis_sshd_allow_users }}"
+    dest: "/etc/ssh/sshd_config"
+  when:
+    - sshd_config.stat.exists
+    - cis_sshd_allow_users is defined and cis_sshd_allow_users|trim != ""
+  notify: Restart sshd
+  tags:
+    - "5.2.15"
+
+- name: 5.2.15 - Configure SSH AllowGroups
+  lineinfile:
+    regexp: "^#?AllowGroups\\s+"
+    line: "AllowGroups {{ cis_sshd_allow_groups }}"
+    dest: "/etc/ssh/sshd_config"
+  when:
+    - sshd_config.stat.exists
+    - cis_sshd_allow_groups is defined and cis_sshd_allow_groups|trim != ""
+  notify: Restart sshd
+  tags:
+    - "5.2.15"
+- name: 5.2.15 - Configure SSH DenyUsers
+  lineinfile:
+    regexp: "^#?DenyUsers\\s+"
+    line: "DenyUsers {{ cis_sshd_deny_users }}"
+    dest: "/etc/ssh/sshd_config"
+  when:
+    - sshd_config.stat.exists
+    - cis_sshd_deny_users is defined and cis_sshd_deny_users|trim != ""
+  notify: Restart sshd
+  tags:
+    - "5.2.15"
+- name: 5.2.15 - Configure SSH DenyGroups
+  lineinfile:
+    regexp: "^#?DenyGroups\\s+"
+    line: "DenyGroups {{ cis_sshd_deny_groups }}"
+    dest: "/etc/ssh/sshd_config"
+  when:
+    - sshd_config.stat.exists
+    - cis_sshd_deny_groups is defined and cis_sshd_deny_groups|trim != ""
+  notify: Restart sshd
+  tags:
+    - "5.2.15"
+
+- name: 5.3.2 - Ensure lockout for failed password attempts is configured
+  blockinfile:
+    path: /etc/pam.d/system-auth
+    block: |
+      auth required pam_faillock.so preauth audit silent deny=5 unlock_time=900
+      auth [success=1 default=bad] pam_unix.so
+      auth [default=die] pam_faillock.so authfail audit deny=5 unlock_time=900
+      auth sufficient pam_faillock.so authsucc audit deny=5 unlock_time=900
+  tags:
+    - "5.3.2"
+
+- name: 5.3.2 -  Ensure lockout for failed password attempts is configured
+  blockinfile:
+    path: /etc/pam.d/password-auth
+    block: |
+      auth required pam_faillock.so preauth audit silent deny=5 unlock_time=900
+      auth [success=1 default=bad] pam_unix.so
+      auth [default=die] pam_faillock.so authfail audit deny=5 unlock_time=900
+      auth sufficient pam_faillock.so authsucc audit deny=5 unlock_time=900
+  tags:
+    - "5.3.2"
+
+- name: 5.4.2 - Retrieve system accounts
+  shell: "awk -F: '($3 < 500) {print $1 }' /etc/passwd | grep -v ^#"
+  register: audit_5_4_2
+  check_mode: no
+  changed_when: False
+  tags:
+    - "5.4.2"
+- name: 5.4.2 - Lock system user passwords
+  shell: "usermod -L {{ item }}"
+  with_items:
+    - "{{ audit_5_4_2.stdout_lines|default([]) }}"
+  when: item != "root"
+  changed_when: false
+  tags:
+    - "5.4.2"
+
+- name: 5.4.2 - Ensure system accounts are non-login
+  user:
+    name: "{{ item }}"
+    shell: "/sbin/nologin"
+  with_items:
+    - "{{ audit_5_4_2.stdout_lines|default([]) }}"
+  when: "item not in cis_skip_lock_users"
+  tags:
+    - "5.4.2"
+
+- name: 5.4.4 - Ensure default user umask is 027 in /etc/bashrc
+  replace:
+    path: /etc/bashrc
+    regexp: '(^\s+umask) (002|022)'
+    replace: '\1 027'
+  tags: 
+   - "5.4.4"
+
+- name: 5.4.4 -Ensure default user umask is 027 in /etc/profile
+  replace:
+    path: /etc/profile
+    regexp: '(^\s+umask) (002|022)'
+    replace: '\1 027'
+  tags:
+    - "5.4.4"
+
+- name: 6.1.10 - Audit if any world writable files exist
+  shell: df --local -P | awk {'if (NR!=1) print $6'} | xargs -I '{}' find '{}' -xdev -type f -perm -0002
+  register: audit_6_1_10
+  changed_when: false
+  tags:
+    - "6.1.10"
+
+- name: 6.1.10 - Ensure no world writable files exist
+  fail:
+    msg: "{{ audit_6_1_10.stdout_lines }}"
+  when:
+    - audit_6_1_10.stdout_lines is defined and audit_6_1_10.stdout_lines|length > 0
+    - fail_on_manual_remediation_actions
+  tags:
+    - "6.1.10"
+
+- name: 6.1.10 - Ensure no world writable files exist
+  debug:
+    msg: "*** ACTION REQUIRED *** {{ audit_6_1_10.stdout }}"
+  when:
+    - audit_6_1_10.stdout_lines is defined and audit_6_1_10.stdout_lines|length > 0
+    - not fail_on_manual_remediation_actions
+  tags:
+    - "6.1.10"
+
+- name: 6.1.11 - Audit if any unowned files or directories exist
+  shell: df --local -P | awk {'if (NR!=1) print $6'} | xargs -I '{}' find '{}' -xdev -nouser
+  register: audit_6_1_11
+  changed_when: false
+  tags:
+    - "6.1.11"
+
+- name: 6.1.11 - Ensure no unowned files or directories exist
+  fail:
+    msg: "{{ audit_6_1_11.stdout_lines }}"
+  when:
+    - audit_6_1_11.stdout_lines is defined and audit_6_1_11.stdout_lines|length > 0
+    - fail_on_manual_remediation_actions
+  tags:
+    - "6.1.11"
+
+- name: 6.1.11 - Ensure no unowned files or directories exist
+  debug:
+    msg: "*** ACTION REQUIRED *** {{ audit_6_1_11.stdout }}"
+  when:
+    - audit_6_1_11.stdout_lines is defined and audit_6_1_11.stdout_lines|length > 0
+    - not fail_on_manual_remediation_actions
+  tags:
+    - "6.1.11"
+
+- name: 6.2.7 - Audit existence of users' home directories
+  script: "{{ role_path }}/files/audit_6.2.7.sh"
+  check_mode: no
+  changed_when: False
+  register: audit_6_2_7
+  tags:
+    - "6.2.7"
+
+- name: 6.2.7 - Ensure users' home directories exist.
+  user:
+    name: "{{ item.split(':')[0] }}"
+    home: "{{ item.split(':')[1] }}"
+  when: audit_6_2_7.stdout_lines is defined and audit_6_2_7.stdout_lines|length > 0
+  with_items: "{{ audit_6_2_7.stdout_lines }}"
+  tags:
+    - "6.2.7"
+
+- name: 6.2.8 - Audit users' home directories permissions
+  script: "{{ role_path }}/files/audit_6.2.8.sh"
+  check_mode: no
+  changed_when: False
+  register: audit_6_2_8
+  tags:
+    - "6.2.8"
+- name: 6.2.8 - Ensure users' home directories permissions are 750 or more restrictive
+  fail:
+    msg: "{{ audit_6_2_8.stdout_lines }}"
+  when:
+    - audit_6_2_8.stdout_lines is defined and audit_6_2_8.stdout_lines|length > 0
+    - fail_on_manual_remediation_actions
+  tags:
+    - "6.2.8"
+
+- name: 6.2.8 - Ensure users' home directories permissions are 750 or more restrictive
+  debug:
+    msg: "*** ACTION REQUIRED *** {{ audit_6_2_8.stdout }}"
+  when:
+    - audit_6_2_8.stdout_lines is defined and audit_6_2_8.stdout_lines|length > 0
+    - not fail_on_manual_remediation_actions
+  tags:
+    - "6.2.8"

@@ -1,0 +1,48 @@
+---
+- name: check if /etc/hosts.allow configuration file exists
+  stat:
+    path: "/etc/hosts.allow"
+  register: hosts_allow
+  tags:
+    - "3.4.3"
+
+- name: Ensure /etc/hosts.allow is configured
+  copy:
+    dest: "/etc/hosts.allow"
+    content: "sshd: ALL\n"
+  when: hosts_allow.stat.exists is not defined or not hosts_allow.stat.exists
+  tags:
+    - "3.4.3"
+
+- name: ensure /etc/hosts.allow content is configured
+  lineinfile:
+    dest: "/etc/hosts.allow"
+    regexp: "^ALL:"
+    line: "sshd: ALL"
+  when:  hosts_allow.stat.exists is  defined or  hosts_allow.stat.exists
+  tags:
+    - "3.4.3"
+- name: check if /etc/hosts.deny configuration file exists
+  stat:
+     path: "/etc/hosts.deny"
+  register: hosts_deny
+  tags:
+    - "3.4.3"
+    - deny
+- name:  Ensure /etc/hosts.deny is configured
+  copy:
+    dest:  "/etc/hosts.deny"
+    content: "ALL: ALL\n"
+  when: hosts_deny.stat.exists is not defined or not hosts_deny.stat.exists
+  tags:
+    - "3.4.3"
+    - deny
+- name:  ensure /etc/hosts.deny content is configured
+  lineinfile:
+     dest: "/etc/hosts.deny"
+     regexp: "^ALL:"
+     line: "ALL: ALL"
+  when: hosts_deny.stat.exists is defined or hosts_deny.stat.exists
+  tags:
+    - "3.4.3"
+    - deny

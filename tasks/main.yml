@@ -1,2 +1,28 @@
 ---
 # tasks file for cis
+- include: level-1.yaml
+  become: yes
+
+- include: level-2.yaml
+  become: yes
+
+# tasks file for grub password
+- name: "common | set os specific variables"
+  include_vars: "{{ item }}"
+  with_first_found:
+    #- "os-{{ ansible_distribution }}-{{ ansible_distribution_release }}.yaml"
+    - "os-RedHat-7.yaml"
+    - "os-default.yaml"
+  tags:
+    - grub-password
+
+- include: grub-v2.yaml
+  when: grub_password_version == 2
+  tags:
+    - grub-password
+
+#- include: partitions.yaml
+#  tags:
+#      - volume
+
+- include: 3.4.3-hosts.yaml

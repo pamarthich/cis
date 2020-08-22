@@ -1,0 +1,32 @@
+# Ensure auditing for processes that start prior to auditd is enabled
+- name: 4.1.3 - Ensure auditing for processes that start prior to auditd is enabled
+  lineinfile:
+    regexp: "^GRUB_CMDLINE_LINUX="
+    line: 'GRUB_CMDLINE_LINUX="console=ttyS0,115200n8 console=tty0 net.ifnames=0 crashkernel=auto audit=1"'
+    state: present
+    dest: "/etc/default/grub"
+    backup: yes
+  tags:
+    - "4.1.3"
+
+- name: 4.1.3 - Run the command to update the Grub Configuration
+  command: "grub2-mkconfig > /boot/grub2/grub.cfg"
+  changed_when: false
+  tags:
+    - "4.1.3"
+
+- name: 4.1.4 - 4.1.17 - Ensure the audit.rules file is configured
+  template:
+    src: /home/ansible/playbooks/templates/audit.rules.j2
+    dest: /etc/audit/rules.d/audit.rules
+    mode: 0600
+    owner: root
+    group: root
+    backup: true
+  #notify:
+  #  - Restart auditd
+  tags:
+    - "4.1.n"
+
+- name: restart auditd
+  command: /usr/sbin/service auditd reload

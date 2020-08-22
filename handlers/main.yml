@@ -1,2 +1,11 @@
 ---
 # handlers file for cis
+
+- name: Restart rsyslog
+  service:
+    name: rsyslog
+    state: restarted
+
+# handlers for grub password
+- name: grub-v2-update-config
+  command: "{{ grub_password_mkconfig }} -o {{ grub_boot_path }}/grub.cfg"
